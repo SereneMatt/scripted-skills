@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Verify UI with video
 
-Prove UI behaviour with visible measurements and assess loading, responsiveness, and visual stability with Core Web Vitals. Use the framework-agnostic [overlay helper](scripts/verify.js); write checks for the actual acceptance criteria. A video demonstrates the tested journey; performance conclusions come from measurements.
+Prove UI behaviour with visible measurements and assess loading, responsiveness, and visual stability with Core Web Vitals. Use the [overlay helper](scripts/verify.js); write checks for the actual acceptance criteria. A video demonstrates the tested journey; performance conclusions come from measurements.
 
 ## 1. Define the evidence
 
