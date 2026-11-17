@@ -1,7 +1,7 @@
 # scripted-skills
 
-Agent skills backed by scripts, for chores a person would otherwise do by hand.
+Engineering skills backed by scripts for UI verification and performance measurement.
 
-| Automation | Human time | Agent time |
-| --- | --- | --- |
-| [`birthday-list`](birthday-list/README.md): monthly birthday list from contacts | 3 hours | 0.604 seconds (average of 4 runs: 0.622, 0.569, 0.591, 0.634) |
+UI verification: [`verify-ui-with-video`](verify-ui-with-video/SKILL.md) uses T3Code's preview tool. That's where all the magic happens these days! Hence the wrapper skill to generate a video result based on the verfication to check responsive acceptance criteria, measure Core Web Vitals, and record visible pass/fail evidence.
+
+Other automations live in [`non-engineering`](non-engineering/README.md).
