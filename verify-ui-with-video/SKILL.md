@@ -1,59 +1,122 @@
 ---
 name: verify-ui-with-video
-description: Verify responsive UI acceptance criteria and Core Web Vitals, then record a preview video with measured pass/fail evidence.
+description: Record headless Playwright videos, one per viewport width, that prove a page meets its acceptance criteria with a live pass/fail overlay, and measure Core Web Vitals in separate clean runs.
 disable-model-invocation: true
 ---
 
 # Verify UI with video
 
-Prove UI behaviour with visible measurements and assess loading, responsiveness, and visual stability with Core Web Vitals. Use the [overlay helper](scripts/verify.js); write checks for the actual acceptance criteria. A video demonstrates the tested journey; performance conclusions come from measurements.
+Record one video per width in which every acceptance criterion is **verifiable** from the frames alone: a viewer reads the measured value and its ✅/❌ on screen, without trusting the narration. Core Web Vitals come from **clean runs** of the same journey, with nothing on the page except the vitals collector.
 
-## 1. Define the evidence
+`scripts/record.mjs` drives headless Chromium. For each width it runs the clean runs first, then the **evidence run**: it injects `scripts/overlay.js` and your checks after each page load, records `<width>px.webm`, and ends the video on the clean-run vitals. The checks for each task are yours to write.
 
-Map every acceptance criterion to an observable, its stated unit, expected value, action, and viewport widths. Read breakpoints from source; include both sides (for example 719 and 720), one mobile width, and one wide width. Count “moves two cards” in card indices, allowing for snapping and end clamps. Include relevant empty, loading, error, disabled, keyboard focus, and overflow states.
+## 1. Set up once
 
-Inspect the rendered page as well as DOM values: clipping, overlap, unreadable text, missing assets, and focus visibility need visual evidence. A matching DOM property alone cannot prove the UI looks correct. Mark subjective or inaccessible evidence as partial.
+In this skill's folder: `npm install`, then `npx playwright install chromium`. The runner resolves `playwright` and `web-vitals` from this folder first, then from the working directory.
 
-Read [Core Web Vitals measurement](references/performance.md) before preparing runs. Define LCP, INP, and CLS budgets, representative interactions, and test conditions. Done when every criterion has an evidence plan and each vital has a measurement method or an explicit unavailable reason.
+Done when both commands exit 0.
 
-## 2. Prepare the browser and performance baseline
+## 2. Map criteria to observables
 
-For local pages, start the server in the background with noninteractive flags/environment variables. Wait for HTTP 200 at the exact page URL. Use a production build for performance where available; label development-server measurements.
+For every criterion, write down:
 
-In T3 Code, use `preview_open` with `reuseExistingTab: false` and `target: { kind: 'environment-port', port }`, then `preview_resize` with `freeform`. Confirm `innerWidth` using `preview_evaluate`; use measured widths. Discover the available tool signatures. If these tools are unavailable, use an available browser/recording equivalent and report any unsupported recording or input capability.
+- **Observable**: the DOM value that proves it (`scrollLeft`, `disabled`, a rect, `visibility`, `location.href`).
+- **Unit**: the unit the criterion itself names. "Moves 2 cards" is counted in cards (the index of the first fully visible card), not pixels. A proxy unit logs false ❌ on correct behaviour, for example after scroll-snap or a clamp at the end.
+- **Widths**: both sides of every breakpoint the criterion names (719 and 720), plus one mobile and one wide width. Read breakpoint values from source.
 
-Measure a baseline on a clean page before adding the overlay or recording. Install the performance collector before navigation/first interaction as described in the reference. Keep URL, build, browser, viewport, CPU/network throttling, and cache state with the raw results. Done when the baseline has measurements or explicit gaps for all three vitals.
+Include the empty, loading, error, disabled, focus and overflow states the criteria touch. Clipping, overlap and focus visibility need a frame, not only a DOM value; mark those partial until you have inspected one.
 
-## 3. Write checks and the journey
+Done when every criterion has an observable, a unit and a width list.
 
-Read [overlay setup and examples](references/overlay.md) when writing checks or installing the helper. Keep one setup function in a scratchpad file: it registers the criteria and returns the journey for one width. Use bounded waits and read final state after transitions and scrolling settle.
+## 3. Write the checks file
 
-Keep the scratchpad as the source of truth when updating browser checks. Reinstall after navigation, wait for app readiness, and clear dry-run results before recording. Disclose widgets hidden for evidence and verify them separately when they are under test.
+One function expression in a scratchpad file. It registers the checks, then returns the journey for one width. Drive every interaction with `qa.act`: it is trusted Playwright input, so it produces the interactions INP measures.
 
-Done when every criterion has a check or an explicit manual visual/input step, and the script has bounded waits.
+```js
+(qa) => {
+  qa.hide('#cookie-banner');
+  const row = document.querySelector('[data-cards]');
+  const prev = document.querySelector('[data-prev]');
+  const next = document.querySelector('[data-next]');
+  qa.focus(row);
+  qa.onLoad('start', () => ({ pass: prev.disabled, detail: `card #${qa.firstFullyVisible(row)}` }));
+  qa.check('Next contrast', () => {
+    const ratio = qa.contrast(qa.color(next), qa.background(next));
+    return { pass: ratio >= 3, detail: `${ratio.toFixed(2)}:1` };
+  });
 
-## 4. Dry run and inspect
+  return async () => {
+    qa.step(`${qa.width}px · start`);
+    await qa.sleep(1500);
+    qa.step(`${qa.width}px · click Next`);
+    const scrolled = new Promise((resolve) => row.addEventListener('scrollend', resolve, { once: true }));
+    await qa.act('click', '[data-next]');
+    await Promise.race([scrolled, qa.sleep(1500)]);
+    await qa.logSettled('next', () => ({ pass: qa.firstFullyVisible(row) === 1, detail: `card #${qa.firstFullyVisible(row)}` }));
+    await qa.sleep(1500);
+  };
+};
+```
 
-For every width: resize → navigate to a fresh load → wait for readiness → reinstall and run. Inspect frames for the visual criteria, use real pointer and keyboard tools for hover, drag, focus, and responsiveness, and log their measured outcomes with `qa.logSettled`. `element.click()` is useful for deterministic UI state checks; it does not generate trusted Event Timing interactions for INP.
+The same file runs in both modes. In a clean run `act`, `sleep`, `settle` and the measuring helpers work, and everything that touches the page or evaluates a check does nothing: `hide`, `focus`, `step`, `log`, `check`, `onLoad`; `logSettled` resolves `undefined`. Keep the journey's control flow independent of what those return.
 
-Read state after transitions settle. Capture listeners can correlate click/scroll events with before/after values. To check drag-suppressed navigation, inspect `event.defaultPrevented` after dispatch and compare the URL. Preserve actual failure measurements; repair checks only when their observable or unit is wrong.
+Hide third-party widgets that cover the overlay or the element under test with `qa.hide(selector)`: the evidence run discloses it on screen and the clean runs keep the widget, so vitals measure the real page.
 
-Done when each width has a result for every criterion: pass, real defect, or explicitly unverified. Pending/unavailable is never a pass. Investigate performance budget failures using attribution and repeat comparable clean runs after fixes within the authorized scope.
+## 4. Dry run
 
-## 5. Record the evidence
+```sh
+node <skill-dir>/scripts/record.mjs --url <url> --widths 390,719,720,1440 --checks <checks.js> --wait-for '<selector>' --no-video
+```
 
-Start `preview_recording_start`, repeat the dry-run sequence for every width, and end on a summary step with `qa.table()`. Keep each measured state readable. Resizing must precede navigation so prior scroll state does not leak into the run. Real hover/drag/keyboard actions can be driven with `preview_act` between evaluations, followed by `qa.logSettled`.
+`--wait-for` is the element your checks query first. Client-rendered pages add it after the `load` event, so without it the checks run against an empty page.
 
-The overlay adds rendering work and may cover content. Frame the target so it remains visible; record a separate unobstructed view for covered visual details. Use clean, unrecorded runs for reported performance budgets, and label any overlay vitals as provisional local samples.
+Done when every width prints ✅ for every key and every vital, or each ❌ is a real defect you can explain in the criterion's unit. An unavailable vital is a ❌: INP needs at least one `qa.act` in the journey. The exit code is 0 only when everything passes.
 
-Done when the video visibly demonstrates each provable criterion and identifies partial evidence.
+## 5. Record and report
 
-## 6. Deliver
+The same command without `--no-video`, plus `--out <dir>`. Read back the frames that carry visual criteria and the final vitals frame:
 
-Stop recording with `preview_recording_stop`, remove only aborted takes created by this run, and close the preview with `t3_preview_close` (or the available equivalent). Report:
+```sh
+node <skill-dir>/scripts/frame.mjs <dir>/390px.webm <seconds|end> <frame.png>
+```
 
-- Video path and per-width UI results with measured values, expected values, and partial/unverified criteria.
-- LCP/INP/CLS values, budgets, run count, test conditions, and clean-run artifacts; compare with the baseline when fixes were made.
-- Real defects, unsupported metrics, and remaining field-validation needs.
+Report each video path, the per-width results with measured values, the vitals medians, worst values and conditions line, every hidden widget, and each criterion you could only partly prove. The vitals are lab values under the printed conditions; Google assesses Core Web Vitals at the 75th percentile of real-user page loads.
 
-If recording is unavailable, deliver screenshots and results and explicitly mark the video requirement incomplete.
+## Runner options
+
+| Option | Default | Use |
+| --- | --- | --- |
+| `--url`, `--widths`, `--checks` | required | Page, comma-separated widths, checks file |
+| `--wait-for <selector>` | none | Wait until the element is in the DOM before injecting |
+| `--out <dir>` | `verify-videos` | Where `<width>px.webm` goes |
+| `--height <px>` | `900` | Viewport and video height |
+| `--timeout <ms>` | `60000` | Per run; a journey that never finishes fails that run |
+| `--runs <n>` | `3` | Clean runs per width; the report gives the median and worst |
+| `--throttle` | off | Clean runs only: Lighthouse's mobile preset (CPU 4×, 562.5ms latency, 1474.56/675 Kbps) |
+| `--budget-lcp`, `--budget-inp`, `--budget-cls` | `2500`, `200`, `0.1` | Budgets for the median; use the criterion's own when it is stricter |
+| `--no-video` | off | Dry run |
+
+## Overlay API
+
+| Call | Use |
+| --- | --- |
+| `qa.check(label, () => ({ pass, detail }))` | Live line, evaluated every frame and recorded once the journey ends; shows ⏳ while a finite animation runs |
+| `qa.onLoad(key, () => ({ pass, detail }))` | Evaluated once after transitions settle, before the journey starts; recorded |
+| `qa.logSettled(key, () => ({ pass, detail }))` | Waits for transitions to settle, then logs and records; use for every state read after an action |
+| `qa.act(action, selector, target?)` | Trusted input: `click`, `hover`, `drag` (to `target`), `press` (key name as `selector`) |
+| `qa.hide(selector)` | Hide a covering widget in the evidence run and disclose it |
+| `qa.log(text, pass?, key?)` | Event log line; with a `key` it is also recorded, and a recorded ❌ stays ❌ |
+| `qa.color(el)`, `qa.background(el)`, `qa.contrast(fg, bg)` | Text colour, first fully opaque ancestor background, unrounded WCAG ratio for opaque RGB |
+| `qa.firstFullyVisible(scroller)` | Index of the first child with both edges in view, or -1: the card unit for carousels |
+| `qa.settle()` | Resolves once finite animations finish; rejects after 5s |
+| `qa.step(text)`, `qa.focus(el)` | Step heading; outline `el` and scroll it below any sticky header |
+| `qa.shifts(root)` | Raw layout-shift entries from page load whose sources are inside `root`; diagnostic, not CLS |
+| `qa.record(key, pass)`, `qa.sleep(ms)`, `qa.width`, `qa.ok(pass)` | Write a result, pacing, width at load, ✅/❌/⏳ |
+
+A throw while the checks load or the journey runs is recorded as a failing `setup` or `script` key.
+
+## Reference
+
+- **Real input**: `qa.act` waits until the element can take the input. An element hidden at a width makes it wait until `--timeout` fails the run; guard the call with a visibility check when hiding is expected.
+- **Smooth scrolling**: `qa.settle()` covers animations, not scrolling. Wait for `scrollend` with a bounded fallback before reading a scroll position.
+- **No layout shift**: `qa.shifts(section).length === 0` is the evidence for one section, because the observer is buffered from page load and so includes hydration. Page-level stability is the CLS vital.
