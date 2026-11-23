@@ -1,5 +1,4 @@
 (checks, mode = 'evidence') => {
-  // A clean run measures Core Web Vitals, so it adds nothing to the page: no panel, no frame loop, no outline, no stylesheet.
   const display = mode === 'evidence';
   const ok = (pass) => (pass === undefined || pass === null ? '⏳' : pass ? '✅' : '❌');
 
@@ -24,7 +23,12 @@
   const finiteAnimations = () =>
     document
       .getAnimations()
-      .filter((animation) => animation.playState === 'running' && animation.effect?.getComputedTiming().endTime !== Infinity);
+      .filter(
+        (animation) =>
+          animation.playState === 'running' &&
+          animation.timeline instanceof DocumentTimeline &&
+          animation.effect?.getComputedTiming().endTime !== Infinity
+      );
   const animating = () => finiteAnimations().length > 0;
   const settle = () =>
     new Promise((resolve, reject) => {
@@ -187,7 +191,6 @@
       }
       if (display) {
         await qa.settle();
-        // On-load results are already recorded under their own key.
         for (const { label, evaluate } of liveChecks.filter((check) => !check.onLoad)) {
           try {
             const { pass, detail } = evaluate();
@@ -209,7 +212,6 @@
 
   if (display) {
     const tick = () => {
-      // A live read mid-transition is a false ❌, so the mark waits until finite animations finish.
       const mark = (pass) => (animating() ? '⏳' : ok(pass));
       part('live').textContent = [
         `viewport ${innerWidth}px`,

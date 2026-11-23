@@ -4,12 +4,8 @@ Agent skills backed by scripts. The UI verification skills prove acceptance crit
 
 ## UI verification
 
-**Edition**:
-One implementation of the UI verification skill, defined by the browser driver it uses. Editions share the same evidence model and overlay API.
-_Avoid_: Version, variant, flavour
-
 **T3 Code edition**:
-The edition where the agent drives T3 Code's preview tools step by step.
+The edition where the agent drives T3 Code's preview tools step by step. It does not measure Core Web Vitals.
 _Avoid_: T3 version, preview edition
 
 **Playwright edition**:

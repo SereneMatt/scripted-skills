@@ -1,82 +1,86 @@
 # Overlay setup and examples
 
-Read this when writing checks, installing the overlay, or choosing a helper API. The reusable implementation lives in [verify.js](../scripts/verify.js). For the vitals collector, read [Core Web Vitals measurement](performance.md).
+Read this when writing checks, installing the overlay, or choosing a helper API. The implementation lives in [metrics.js](../scripts/metrics.js); always install it in evidence mode.
 
-## Setup and example
+## Checks file
 
-Keep one setup function in a scratchpad file. It registers checks and returns an async script for one width. If a third-party widget obscures the UI, first insert a narrowly scoped stylesheet for the evidence run and disclose it. Verify consent UI separately if it is under test; keep the clean performance run representative.
+One function expression in a scratchpad file. It registers checks and may return an async journey for the scripted parts of one width.
 
 ```js
 (qa) => {
   const row = document.querySelector('[data-cards]');
-  const next = document.querySelector('[data-next]');
-  if (!row || !next) throw new Error('Missing carousel controls');
+  const prev = document.querySelector('[data-prev]');
+  if (!row || !prev) {
+    throw new Error('Missing carousel controls');
+  }
+  qa.hide('#cookie-banner');
   qa.focus(row);
-  qa.onLoad('start', () => ({
-    pass: qa.firstFullyVisible(row) === 0,
-    detail: `first fully visible card: ${qa.firstFullyVisible(row)} (zero-based)`
-  }));
+  qa.onLoad('start', () => ({ pass: prev.disabled, detail: `card #${qa.firstFullyVisible(row)}` }));
   qa.check('overflow', () => ({
     pass: document.documentElement.scrollWidth <= innerWidth,
     detail: `${document.documentElement.scrollWidth}px content / ${innerWidth}px viewport`
   }));
-  // Register only when the collector described in the reference is installed.
-  for (const name of ['LCP', 'INP', 'CLS']) qa.check(name, () => qa.vital(name));
   return async () => {
-    qa.step(`${qa.width}px · initial state`);
-    await qa.sleep(1500);
-    qa.step(`${qa.width}px · next card`);
-    const started = performance.now();
-    let position = row.scrollLeft;
-    let stableSince = started;
-    next.click();
-    // Allow scrolling to start, then require 200ms of stable position.
-    while (true) {
-      await qa.sleep(50);
-      const now = performance.now();
-      if (row.scrollLeft !== position) {
-        position = row.scrollLeft;
-        stableSince = now;
-      }
-      if (now - started >= 3000) throw new Error('Carousel did not settle within 3s');
-      if (now - started >= 300 && now - stableSince >= 200) break;
-    }
-    await qa.logSettled('next', () => ({
-      pass: qa.firstFullyVisible(row) === 1,
-      detail: `first fully visible card: ${qa.firstFullyVisible(row)}; expected 1`
-    }));
+    qa.step(`${qa.width}px · start`);
     await qa.sleep(1500);
   };
-};
+}
 ```
 
-Adapt the expected index to the actual criterion. For animated scrolling, wait for a bounded `scrollend` or stable scroll position before reading the final index; animation settling alone does not cover smooth scrolling.
+## Install
 
-Install in one evaluation: assign the scratchpad function's source to `sessionStorage.qaChecks`, remove `qaResults`, then execute the full contents of `../scripts/verify.js`. The helper stores its own source in `sessionStorage.verifyWithVideo`.
-
-After each same-origin navigation, reinstall and run in one evaluation:
+After each navigation and readiness wait, install in one `preview_evaluate`. Replace `METRICS` with the full contents of `metrics.js` and `CHECKS` with the checks file. Both contain template literals, so wrap them in a function rather than a string:
 
 ```js
-new Function(sessionStorage.verifyWithVideo)();
-await qa.run();
+const install = () => (METRICS)(CHECKS, 'evidence');
+sessionStorage.qaInstall = `(${install})()`;
+install();
 ```
 
-Wait for the app's ready condition before this call. A different origin requires reinstalling both sources. Edit the scratchpad, then resend it; browser-only patches leave stale checks. Clear results between dry run and recording with `qa.reset()`.
+After a later same-origin navigation, reinstall without resending either source:
+
+```js
+new Function(sessionStorage.qaInstall)();
+```
+
+A different origin, or an edited checks file, needs the full install again. Browser-only patches leave stale checks.
+
+## Trusted input
+
+`qa.act` is wired only by the Playwright runner, so do not call it here. Drive real input with `preview_act` between evaluations:
+
+1. `preview_evaluate`: ``qa.step(`${qa.width}px · click Next`)``
+2. `preview_act` the click, hover, drag or key press.
+3. `preview_evaluate` the outcome:
+
+```js
+qa.sleep(300).then(() =>
+  qa.logSettled('next', () => {
+    const index = qa.firstFullyVisible(document.querySelector('[data-cards]'));
+    return { pass: index === 1, detail: `card #${index}` };
+  })
+)
+```
+
+For smooth scrolling, wait for a bounded `scrollend` or a stable scroll position before reading the index; `qa.settle()` covers animations, not scrolling.
+
+## Finish a width
+
+Evaluate `qa.run()` last. It waits for the on-load checks, runs the returned journey, records every live check, shows the width's results line, and returns the results object. Results live on the page, so keep each width's return value for the report.
 
 ## Overlay API
 
-| Call | Evidence |
+| Call | Use |
 | --- | --- |
-| `qa.check(label, evaluate)` | Live `{ pass, detail }` line, sampled every 250ms; snapshot recorded at script completion. Use `logSettled` for intermediate states. |
-| `qa.onLoad(key, evaluate)` | Settled initial-state measurement; awaited before the script. |
-| `qa.logSettled(key, evaluate)` | Settled action measurement, recorded in results; repeated keyed failures persist. |
-| `qa.log(text, pass?, key?)` | Event log; provide a key to persist a result. |
-| `qa.run()`, `qa.table()` | Run the journey and return the cross-width summary; read the current summary. |
-| `qa.vital(name)` | Read `window.__qaVitals` collector data; unavailable metrics remain pending. |
-| `qa.firstFullyVisible(scroller)` | Zero-based child index with both horizontal edges in view, or -1. |
-| `qa.shifts(root)` | Buffered raw layout-shift entries attributed to root descendants; diagnostic only, not CLS. |
-| `qa.color(el)`, `qa.background(el)`, `qa.contrast(fg, bg)` | Simple opaque RGB contrast helper; use a dedicated tool for alpha, gradients, images, or other colour spaces. Compare the unrounded ratio with the criterion. |
-| `qa.focus(el)`, `qa.step(text)` | Outline/scroll target below headers; set visible step heading. |
-| `qa.settle()`, `qa.sleep(ms)` | Await finite animations or pacing; bound application-specific waits separately. |
-| `qa.record(key, pass)`, `qa.reset()` | Write one result or clear the stored table. |
-| `qa.width`, `qa.ok(pass)` | Width at installation; status mark (`⏳` for unavailable). |
+| `qa.check(label, () => ({ pass, detail }))` | Live line, evaluated every frame and recorded by `qa.run()`; shows ⏳ while a finite animation runs |
+| `qa.onLoad(key, () => ({ pass, detail }))` | Evaluated once after transitions settle, before the journey starts; recorded |
+| `qa.logSettled(key, () => ({ pass, detail }))` | Waits for transitions to settle, then logs and records; use for every state read after an action |
+| `qa.hide(selector)` | Hide a covering widget and disclose it on screen |
+| `qa.log(text, pass?, key?)` | Event log line; with a `key` it is also recorded, and a recorded ❌ stays ❌ |
+| `qa.run()`, `qa.table()` | Finish the width and return its results; read the current results line |
+| `qa.color(el)`, `qa.background(el)`, `qa.contrast(fg, bg)` | Text colour, first fully opaque ancestor background, unrounded WCAG ratio for opaque RGB |
+| `qa.firstFullyVisible(scroller)` | Index of the first child with both edges in view, or -1: the card unit for carousels |
+| `qa.settle()` | Resolves once finite animations finish; rejects after 5s |
+| `qa.step(text)`, `qa.focus(el)` | Step heading; outline `el` and scroll it below any sticky header |
+| `qa.shifts(root)` | Raw layout-shift entries from page load whose sources are inside `root`; diagnostic only |
+| `qa.record(key, pass)`, `qa.sleep(ms)`, `qa.width`, `qa.ok(pass)` | Write a result, pacing, width at install, ✅/❌/⏳ |
