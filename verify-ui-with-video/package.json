@@ -1,0 +1,9 @@
+{
+  "name": "verify-ui-with-video",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright": "1.65.1",
+    "web-vitals": "6.2.3"
+  }
+}
