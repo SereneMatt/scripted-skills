@@ -1,5 +1,5 @@
 ---
-name: verify-ui-with-video
+name: verify-ui-t3code-edition
 description: Verify responsive UI acceptance criteria and Core Web Vitals, then record a preview video with measured pass/fail evidence.
 disable-model-invocation: true
 ---
