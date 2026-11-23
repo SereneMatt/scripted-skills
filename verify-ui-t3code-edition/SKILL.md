@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Verify UI in T3 Code's preview
 
-Prove UI behaviour with visible measurements, with no Playwright or Chromium install. The agent drives T3 Code's built-in preview step by step and records one video across all widths. Write checks for the actual acceptance criteria with the overlay in [metrics.js](scripts/metrics.js).
+Prove UI behaviour with visible measurements, with no separate browser tools. The agent drives T3 Code's built-in preview step by step and records one video across all widths. Write checks for the actual acceptance criteria with the overlay in [metrics.js](scripts/metrics.js).
 
 This edition does not measure Core Web Vitals and gives no exit code for CI. When you need either, use the `verify-ui-with-web-vitals` skill.
 

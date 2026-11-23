@@ -5,7 +5,7 @@ Agent skills backed by scripts. The UI verification skills prove acceptance crit
 ## UI verification
 
 **T3 Code edition**:
-The edition with no separate Playwright or Chromium install: the agent drives T3 Code's built-in preview tools step by step.
+The edition that needs no separate browser tools: the agent drives T3 Code's built-in preview tools step by step.
 _Avoid_: T3 version, preview edition
 
 **Playwright edition**:
