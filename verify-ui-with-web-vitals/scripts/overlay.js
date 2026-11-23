@@ -64,17 +64,12 @@
     ok,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     step: (text) => {
-      if (display) {
-        part('step').textContent = text;
-      }
+      part('step').textContent = text;
     },
     record: (key, pass) => {
       results[key] = pass ?? null;
     },
     log: (text, pass, key) => {
-      if (!display) {
-        return;
-      }
       log.unshift(`${new Date().toISOString().slice(14, 23)} ${text}${pass === undefined ? '' : ` ${ok(pass)}`}`);
       log.length = Math.min(log.length, 8);
       if (key !== undefined) {
@@ -85,9 +80,6 @@
       liveChecks.push({ label, evaluate });
     },
     onLoad: (key, evaluate) => {
-      if (!display) {
-        return;
-      }
       let result = { pass: undefined, detail: 'settling…' };
       liveChecks.push({ label: `${key} (on load)`, evaluate: () => result, onLoad: true });
       loads.push(
@@ -104,17 +96,12 @@
     },
     settle,
     logSettled: (key, evaluate) =>
-      display
-        ? evaluateSettled(evaluate).then(({ pass, detail }) => {
-            qa.log(detail, pass, key);
-            return pass;
-          })
-        : Promise.resolve(undefined),
+      evaluateSettled(evaluate).then(({ pass, detail }) => {
+        qa.log(detail, pass, key);
+        return pass;
+      }),
     act: (action, selector, target) => window.qaAct(action, selector, target),
     hide: (selector) => {
-      if (!display) {
-        return;
-      }
       document.head.insertAdjacentHTML('beforeend', `<style>${selector}{display:none!important}</style>`);
       qa.log(`hidden for evidence: ${selector}`);
     },
@@ -145,16 +132,11 @@
         .map(([key, pass]) => `${key}${ok(pass)}`)
         .join(' ')}`,
     summary: (text) => {
-      if (display) {
-        part('summary').textContent = text;
-      }
+      part('summary').textContent = text;
     },
     shifts: (root) =>
       shiftEntries.filter((entry) => entry.sources?.some((source) => source.node && root.contains(source.node))),
     focus: (element) => {
-      if (!display) {
-        return;
-      }
       element.style.outline = '2px solid #0a7cff';
       const headerBottom = [...document.querySelectorAll('body *')].reduce((bottom, node) => {
         const { position } = getComputedStyle(node);
@@ -169,6 +151,18 @@
       scrollTo({ top: element.getBoundingClientRect().top + scrollY - headerBottom - 60, behavior: 'instant' });
     }
   };
+  if (!display) {
+    const skip = () => {};
+    Object.assign(qa, {
+      step: skip,
+      summary: skip,
+      log: skip,
+      onLoad: skip,
+      hide: skip,
+      focus: skip,
+      logSettled: () => Promise.resolve(undefined)
+    });
+  }
   window.qa = qa;
 
   let script;

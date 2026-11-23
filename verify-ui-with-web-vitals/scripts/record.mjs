@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { bases, loadChromium, setupHint, skillDir } from './playwright.mjs';
 
 const usage = `Usage: node record.mjs --url <url> --widths <390,1280> --checks <checks.js> [--wait-for <selector>] [--out <dir>] [--height <px>] [--timeout <ms>] [--runs <n>] [--throttle] [--budget-lcp <ms>] [--budget-inp <ms>] [--budget-cls <score>] [--no-video]`;
 
@@ -30,23 +29,6 @@ if (!values.url || !values.widths || !values.checks) {
   console.error(usage);
   process.exit(2);
 }
-
-// The skill's own install comes first, so a run never depends on what the project under test has installed.
-const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bases = [skillDir, process.cwd()];
-const setupHint = `Run \`npm install\` and \`npx playwright install chromium\` in ${skillDir}.`;
-
-const loadChromium = () => {
-  for (const base of bases) {
-    for (const name of ['playwright', '@playwright/test']) {
-      try {
-        return createRequire(path.join(base, 'index.js'))(name).chromium;
-      } catch {}
-    }
-  }
-  console.error(`Playwright not found. ${setupHint}`);
-  process.exit(2);
-};
 
 // web-vitals does not export its IIFE build, so locate the package folder the way Node resolution walks node_modules.
 const findPackage = (name) => {
@@ -162,7 +144,13 @@ const summarise = (samples) =>
   });
 
 const chromium = loadChromium();
-const browser = await chromium.launch();
+let browser;
+try {
+  browser = await chromium.launch();
+} catch (error) {
+  console.error(`Chromium did not launch: ${error.message.split('\n')[0]}\n${setupHint}`);
+  process.exit(2);
+}
 const conditions = [
   `${runs} clean runs (no overlay, no recording, cold cache)`,
   values.throttle
@@ -171,68 +159,75 @@ const conditions = [
   `headless Chromium ${browser.version()}`,
   `web-vitals ${webVitalsVersion}`
 ].join(' · ');
-if (recordVideo) {
-  await mkdir(values.out, { recursive: true });
-}
 
 const rows = [];
-for (const width of widths) {
-  const viewport = { width, height };
+try {
+  if (recordVideo) {
+    await mkdir(values.out, { recursive: true });
+  }
 
-  const samples = [];
-  for (let run = 0; run < runs; run++) {
-    const context = await browser.newContext({ viewport });
-    const page = await openPage(context);
-    try {
-      if (values.throttle) {
-        await applyThrottle(page);
+  for (const width of widths) {
+    const viewport = { width, height };
+
+    const samples = [];
+    for (let run = 0; run < runs; run++) {
+      const context = await browser.newContext({ viewport });
+      const page = await openPage(context);
+      try {
+        if (values.throttle) {
+          await applyThrottle(page);
+        }
+        await page.addInitScript({ content: vitalsScript });
+        await runJourney(page, 'clean');
+        // Event Timing entries arrive after the next paint, so INP needs a moment after the last input.
+        await page.waitForTimeout(1000);
+        samples.push(await page.evaluate('window.__qaVitals'));
+      } catch (error) {
+        samples.push({});
+        console.error(`${width}px clean run ${run + 1}: ${error.message}`);
       }
-      await page.addInitScript({ content: vitalsScript });
-      await runJourney(page, 'clean');
-      // Event Timing entries arrive after the next paint, so INP needs a moment after the last input.
-      await page.waitForTimeout(1000);
-      samples.push(await page.evaluate('window.__qaVitals'));
-    } catch (error) {
-      samples.push({});
-      console.error(`${width}px clean run ${run + 1}: ${error.message}`);
+      await context.close();
     }
+    const vitals = summarise(samples);
+
+    const context = await browser.newContext({
+      viewport,
+      ...(recordVideo ? { recordVideo: { dir: values.out, size: viewport } } : {})
+    });
+    const page = await openPage(context);
+    let results;
+    try {
+      results = await runJourney(page, 'evidence');
+      await page.evaluate(
+        ([step, text]) => {
+          window.qa.step(step);
+          window.qa.summary(text);
+        },
+        [
+          `${width}px · Core Web Vitals, measured in clean runs, not in this video`,
+          [conditions, ...vitals.map((vital) => vital.text)].join('\n')
+        ]
+      );
+      await page.waitForTimeout(3000);
+    } catch (error) {
+      results = { error: false };
+      console.error(`${width}px evidence run: ${error.message}`);
+    }
+
+    const video = page.video();
     await context.close();
+    let videoPath;
+    if (video) {
+      videoPath = path.resolve(values.out, `${width}px.webm`);
+      await video.saveAs(videoPath);
+      await video.delete();
+    }
+    rows.push({ width, results, vitals, videoPath });
   }
-  const vitals = summarise(samples);
-
-  const context = await browser.newContext({
-    viewport,
-    ...(recordVideo ? { recordVideo: { dir: values.out, size: viewport } } : {})
-  });
-  const page = await openPage(context);
-  let results;
-  try {
-    results = await runJourney(page, 'evidence');
-    await page.evaluate(
-      ([step, text]) => {
-        window.qa.step(step);
-        window.qa.summary(text);
-      },
-      [
-        `${width}px · Core Web Vitals, measured in clean runs, not in this video`,
-        [conditions, ...vitals.map((vital) => vital.text)].join('\n')
-      ]
-    );
-    await page.waitForTimeout(3000);
-  } catch (error) {
-    results = { error: false };
-    console.error(`${width}px evidence run: ${error.message}`);
-  }
-
-  const video = page.video();
-  await context.close();
-  let videoPath;
-  if (video) {
-    videoPath = path.resolve(values.out, `${width}px.webm`);
-    await video.saveAs(videoPath);
-    await video.delete();
-  }
-  rows.push({ width, results, vitals, videoPath });
+} catch (error) {
+  console.error(`Runner failed: ${error.message}`);
+  await browser.close();
+  process.exit(2);
 }
 await browser.close();
 

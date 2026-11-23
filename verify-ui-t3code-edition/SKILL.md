@@ -1,14 +1,14 @@
 ---
 name: verify-ui-t3code-edition
-description: Verify responsive UI acceptance criteria in T3 Code's preview, then record a video with measured pass/fail evidence.
+description: Verify responsive UI acceptance criteria and record a video with measured pass/fail evidence, without installing Playwright, using T3 Code's built-in preview.
 disable-model-invocation: true
 ---
 
 # Verify UI in T3 Code's preview
 
-Prove UI behaviour with visible measurements in T3 Code's preview. The agent drives the preview step by step and records one video across all widths. Write checks for the actual acceptance criteria with the overlay in [metrics.js](scripts/metrics.js).
+Prove UI behaviour with visible measurements, with no Playwright or Chromium install. The agent drives T3 Code's built-in preview step by step and records one video across all widths. Write checks for the actual acceptance criteria with the overlay in [metrics.js](scripts/metrics.js).
 
-This edition does not measure Core Web Vitals. When the criteria include LCP, INP or CLS, use the `verify-ui-with-video` skill.
+This edition does not measure Core Web Vitals and gives no exit code for CI. When you need either, use the `verify-ui-with-web-vitals` skill.
 
 ## 1. Define the evidence
 
@@ -26,15 +26,50 @@ Use `preview_open` with `reuseExistingTab: false` and `target: { kind: 'environm
 
 ## 3. Write checks and the journey
 
-Read [overlay setup and examples](references/overlay.md) when writing checks or installing the overlay. Keep one checks file in the scratchpad: it registers the criteria and returns the scripted part of the journey for one width. Use bounded waits and read final state after transitions and scrolling settle.
+Keep one checks file in the scratchpad: one function expression that registers the criteria and may return an async journey for the scripted part of one width. Use bounded waits and read final state after transitions and scrolling settle.
 
-Keep the scratchpad as the source of truth when updating browser checks. Reinstall after navigation and wait for app readiness. Hide widgets that cover the evidence with `qa.hide`, and verify them separately when they are under test.
+`qa.check` is a live line evaluated every frame; `qa.onLoad` runs once after transitions settle; `qa.logSettled` reads state after an action. Read [metrics.js](scripts/metrics.js) for the other helpers.
+
+Install after each navigation and readiness wait, in one `preview_evaluate`. Replace `METRICS` with the full contents of [metrics.js](scripts/metrics.js) and `CHECKS` with the checks file. Both contain template literals, so wrap them in a function rather than a string:
+
+```js
+const install = () => (METRICS)(CHECKS);
+sessionStorage.qaInstall = `(${install})()`;
+install();
+```
+
+After a later same-origin navigation, reinstall without resending either source:
+
+```js
+new Function(sessionStorage.qaInstall)();
+```
+
+A different origin, or an edited checks file, needs the full install again. Keep the scratchpad as the source of truth when updating browser checks; browser-only patches leave stale checks. Hide widgets that cover the evidence with `qa.hide`, and verify them separately when they are under test.
 
 Done when every criterion has a check or an explicit manual visual/input step, and the script has bounded waits.
 
 ## 4. Dry run and inspect
 
-For every width: resize → navigate to a fresh load → wait for readiness → install and run. Inspect frames for the visual criteria, use `preview_act` for hover, drag, focus, and real clicks, and log their measured outcomes with `qa.logSettled`.
+For every width: resize → navigate to a fresh load → wait for readiness → install → real input → `qa.run()`. Inspect frames for the visual criteria.
+
+Drive hover, drag, focus, key presses and real clicks with `preview_act`, one action at a time:
+
+1. `preview_evaluate`: ``qa.step(`${qa.width}px · click Next`)``
+2. `preview_act` the input.
+3. `preview_evaluate` the outcome:
+
+```js
+qa.sleep(300).then(() =>
+  qa.logSettled('next', () => {
+    const index = qa.firstFullyVisible(document.querySelector('[data-cards]'));
+    return { pass: index === 1, detail: `card #${index}` };
+  })
+)
+```
+
+For smooth scrolling, wait for a bounded `scrollend` or a stable scroll position before reading state; `qa.settle()` covers animations, not scrolling.
+
+Evaluate `qa.run()` last. It waits for the on-load checks, runs the returned journey, records every live check, shows the width's results line, and returns the results object. Results live on the page, so keep each width's return value for the report.
 
 Read state after transitions settle. Capture listeners can correlate click/scroll events with before/after values. To check drag-suppressed navigation, inspect `event.defaultPrevented` after dispatch and compare the URL. Preserve actual failure measurements; repair checks only when their observable or unit is wrong.
 

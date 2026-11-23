@@ -5,24 +5,16 @@ Agent skills backed by scripts. The UI verification skills prove acceptance crit
 ## UI verification
 
 **T3 Code edition**:
-The edition where the agent drives T3 Code's preview tools step by step. It does not measure Core Web Vitals.
+The edition that needs no Playwright: the agent drives T3 Code's built-in preview tools step by step.
 _Avoid_: T3 version, preview edition
 
 **Playwright edition**:
 The edition where a Playwright runner script drives headless Chromium. This is the default edition.
 _Avoid_: Headless edition, CLI edition
 
-**Overlay**:
-The on-page panel that shows each criterion's measured value and its pass/fail mark while the video records.
-_Avoid_: HUD, banner
-
 **Evidence run**:
 A recorded run that proves criteria on screen. It never measures Core Web Vitals.
 _Avoid_: Recording run, video run
-
-**Clean run**:
-An unrecorded run of the same journey with nothing added to the page except the vitals collector. It is the only source of Core Web Vitals.
-_Avoid_: Baseline run, perf run, benchmark
 
 **Criterion**:
 One acceptance criterion, stated in its own unit, that the run must prove or mark as partial.

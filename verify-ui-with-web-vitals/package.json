@@ -1,5 +1,5 @@
 {
-  "name": "verify-ui-with-video",
+  "name": "verify-ui-with-web-vitals",
   "private": true,
   "type": "module",
   "dependencies": {

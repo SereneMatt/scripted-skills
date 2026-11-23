@@ -1,12 +1,12 @@
 ---
-name: verify-ui-with-video
-description: Record headless Playwright videos, one per viewport width, that prove a page meets its acceptance criteria with a live pass/fail overlay, and measure Core Web Vitals in separate clean runs.
+name: verify-ui-with-web-vitals
+description: Measure Core Web Vitals in clean runs and record headless Playwright videos, one per viewport width, that prove a page meets its acceptance criteria.
 disable-model-invocation: true
 ---
 
-# Verify UI with video
+# Verify UI with Web Vitals
 
-Record one video per width in which every acceptance criterion is **verifiable** from the frames alone: a viewer reads the measured value and its ✅/❌ on screen, without trusting the narration. Core Web Vitals come from **clean runs** of the same journey, with nothing on the page except the vitals collector.
+Record one video per width in which every acceptance criterion is **verifiable** from the frames alone: a viewer reads the measured value and its ✅/❌ on screen, without trusting the narration. Core Web Vitals come from **clean runs** of the same journey. A clean run adds nothing visible to the page: it injects the vitals collector, plus the overlay and your checks in clean mode, which only drive the journey.
 
 `scripts/record.mjs` drives headless Chromium. For each width it runs the clean runs first, then the **evidence run**: it injects `scripts/overlay.js` and your checks after each page load, records `<width>px.webm`, and ends the video on the clean-run vitals. The checks for each task are yours to write.
 
@@ -96,27 +96,3 @@ Report each video path, the per-width results with measured values, the vitals m
 | `--budget-lcp`, `--budget-inp`, `--budget-cls` | `2500`, `200`, `0.1` | Budgets for the median; use the criterion's own when it is stricter |
 | `--no-video` | off | Dry run |
 
-## Overlay API
-
-| Call | Use |
-| --- | --- |
-| `qa.check(label, () => ({ pass, detail }))` | Live line, evaluated every frame and recorded once the journey ends; shows ⏳ while a finite animation runs |
-| `qa.onLoad(key, () => ({ pass, detail }))` | Evaluated once after transitions settle, before the journey starts; recorded |
-| `qa.logSettled(key, () => ({ pass, detail }))` | Waits for transitions to settle, then logs and records; use for every state read after an action |
-| `qa.act(action, selector, target?)` | Trusted input: `click`, `hover`, `drag` (to `target`), `press` (key name as `selector`) |
-| `qa.hide(selector)` | Hide a covering widget in the evidence run and disclose it |
-| `qa.log(text, pass?, key?)` | Event log line; with a `key` it is also recorded, and a recorded ❌ stays ❌ |
-| `qa.color(el)`, `qa.background(el)`, `qa.contrast(fg, bg)` | Text colour, first fully opaque ancestor background, unrounded WCAG ratio for opaque RGB |
-| `qa.firstFullyVisible(scroller)` | Index of the first child with both edges in view, or -1: the card unit for carousels |
-| `qa.settle()` | Resolves once finite animations finish; rejects after 5s |
-| `qa.step(text)`, `qa.focus(el)` | Step heading; outline `el` and scroll it below any sticky header |
-| `qa.shifts(root)` | Raw layout-shift entries from page load whose sources are inside `root`; diagnostic, not CLS |
-| `qa.record(key, pass)`, `qa.sleep(ms)`, `qa.width`, `qa.ok(pass)` | Write a result, pacing, width at load, ✅/❌/⏳ |
-
-A throw while the checks load or the journey runs is recorded as a failing `setup` or `script` key.
-
-## Reference
-
-- **Real input**: `qa.act` waits until the element can take the input. An element hidden at a width makes it wait until `--timeout` fails the run; guard the call with a visibility check when hiding is expected.
-- **Smooth scrolling**: `qa.settle()` covers animations, not scrolling. Wait for `scrollend` with a bounded fallback before reading a scroll position.
-- **No layout shift**: `qa.shifts(section).length === 0` is the evidence for one section, because the observer is buffered from page load and so includes hydration. Page-level stability is the CLS vital.
