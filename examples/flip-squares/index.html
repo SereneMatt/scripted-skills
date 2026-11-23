@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flip squares</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        font: 16px/1.4 system-ui, sans-serif;
+        background: #d6d6d6;
+        color: #111;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 24px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      [data-board] {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        width: min(100%, 400px);
+        aspect-ratio: 1;
+        border: 2px solid #111;
+        box-sizing: border-box;
+      }
+      [data-color='black'] {
+        background: #000;
+      }
+      [data-color='white'] {
+        background: #fff;
+      }
+      button {
+        margin-top: 12px;
+        padding: 6px 14px;
+        font: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Flip squares</h1>
+    <p>Hover a square to flip it.</p>
+    <div data-board></div>
+    <button type="button" data-reset>Reset</button>
+    <script>
+      const board = document.querySelector('[data-board]');
+      const initialColor = (index) => ((Math.floor(index / 8) + (index % 8)) % 2 === 0 ? 'black' : 'white');
+      const squares = Array.from({ length: 64 }, (_, index) => {
+        const square = document.createElement('div');
+        square.dataset.square = index;
+        square.dataset.color = initialColor(index);
+        square.addEventListener('pointerenter', () => {
+          square.dataset.color = square.dataset.color === 'black' ? 'white' : 'black';
+        });
+        return square;
+      });
+      board.append(...squares);
+      document.querySelector('[data-reset]').addEventListener('click', () => {
+        squares.forEach((square, index) => {
+          square.dataset.color = initialColor(index);
+        });
+      });
+    </script>
+  </body>
+</html>
